@@ -70,5 +70,5 @@ sudo crontab -e
 ```
 
 ```
-* * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/gpu_fan.py >> /home/youruser/fan_control/gpu_fan.log 2>&1
+*/5 * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/gpu_fan.py >> /home/youruser/fan_control/gpu_fan.log 2>&1
 ```
