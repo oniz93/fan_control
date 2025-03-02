@@ -23,7 +23,7 @@ source venv/bin/activate
 
 Install the required Python packages inside the virtual environment:
 ```bash
-pip install pyserial
+pip install pyserial cherrypy
 ```
 
 Create `control_fan.py` file and `chmod +x control_fan.py`
@@ -34,7 +34,7 @@ crontab -e
 ```
 
 ```
-*/5 * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/control_fan.py 80 >> /home/youruser/fan_control/control_fan.log 2>&1
+*/5 * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/control_fan.py >> /home/youruser/fan_control/control_fan.log 2>&1
 ```
 
 
@@ -60,6 +60,11 @@ Create and activate a virtual environment:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
+
+Install the required Python packages inside the virtual environment:
+```bash
+pip install requests dotenv
 ```
 
 Create `gpu_fan.py` file and `chmod +x gpu_fan.py`

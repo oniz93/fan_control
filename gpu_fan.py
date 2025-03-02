@@ -1,8 +1,48 @@
 #!/usr/bin/env python3
+"""
+This script continuously monitors GPU temperatures and controls the GPU fan speeds based on the retrieved values.
+It is designed to run indefinitely with a 500ms delay between temperature checks and includes the following functionality:
+
+1. **GPU Temperature Monitoring:**
+   - Retrieves GPU temperatures using `nvidia-smi`.
+   - Parses the output to obtain temperature values for each GPU.
+
+2. **Fan Speed Control:**
+   - For each GPU, calculates the appropriate fan speed using the following logic:
+       - If temperature < 30°C: set fan speed to 40%.
+       - If temperature > 50°C: set fan speed to 100%.
+       - Otherwise, linearly interpolate the fan speed between 40% and 100%.
+   - Applies the fan speed settings using the `py-nvtool` utility.
+
+3. **External Control Notification:**
+   - Loads configuration from a `.env` file. The required parameters are:
+       - `MACHINE_NAME`: Identifier for the machine.
+       - `CONTROL_IP`: IP address of the control server.
+       - `CONTROL_PORT`: Port number of the control server.
+   - After setting the GPU fans, it sends a GET request to:
+     `http://{CONTROL_IP}:{CONTROL_PORT}/{MACHINE_NAME}/{max_temp}`
+   - The request is retried up to 3 times if it fails before moving to the next cycle.
+
+4. **Single Instance Enforcement:**
+   - Ensures only one instance of the script is running at a time by binding to a specific local TCP port (default: 9999).
+   - If another instance is detected (port already in use), the script exits gracefully.
+
+5. **Usage & Dependencies:**
+   - **Usage:** Place a valid `.env` file in the same directory with the required configuration variables and execute the script:
+         ./your_script_name.py
+   - **Dependencies:** Python 3, `nvidia-smi`, `py-nvtool`, `python-dotenv`, and `requests`.
+
+This comprehensive docblock should provide a clear understanding of the script's purpose and how to modify its behavior if needed.
+"""
+
 import subprocess
 import os
 import shutil
 import sys
+import time
+import socket
+import requests
+from dotenv import load_dotenv
 
 def get_gpu_temperature():
     """Retrieve GPU temperatures using nvidia-smi."""
@@ -47,27 +87,61 @@ def set_gpu_fans(temperatures):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ
         )
 
-def compute_duty_cycle(max_temp):
-    """Compute the Arduino duty cycle based on the maximum GPU temperature."""
-    if max_temp < 35:
-        return 20
-    elif max_temp > 70:
-        return 100
-    else:
-        return int(20 + (max_temp - 35) * (80 / 35))
+def check_single_instance(port=9999, host="127.0.0.1"):
+    """Bind to a port to ensure only one instance is running."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, port))
+    except socket.error:
+        print("Another instance is already running. Exiting.")
+        sys.exit(0)
+    return s  # Hold this socket open for the lifetime of the script
+
+def send_get_request(url, retries=3):
+    """Send a GET request to the specified URL, retrying if it fails."""
+    for attempt in range(1, retries+1):
+        try:
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                print(f"GET request succeeded: {url}")
+                return True
+            else:
+                print(f"GET request failed with status {response.status_code}: {url}")
+        except Exception as e:
+            print(f"GET request error on attempt {attempt}: {e}")
+        time.sleep(0.1)
+    print(f"Failed to send GET request after {retries} attempts: {url}")
+    return False
 
 def main():
+    # Load configuration from .env file
+    load_dotenv()
+    MACHINE_NAME = os.getenv("MACHINE_NAME", "default_machine")
+    CONTROL_IP = os.getenv("CONTROL_IP", "127.0.0.1")
+    CONTROL_PORT = os.getenv("CONTROL_PORT", "8080")
+
+    # Check if the required library is available
     if not init_libraries():
         sys.exit(1)
 
-    temperatures = get_gpu_temperature()
-    if temperatures:
-        max_temp = max(temperatures)
-        set_gpu_fans(temperatures)
-        duty_cycle = compute_duty_cycle(max_temp)
-        print(f"Max GPU Temperature: {max_temp}°C | Arduino Fan Duty Cycle: {duty_cycle}%")
-    else:
-        print("Unable to read GPU temperatures.")
+    # Ensure only one instance of the script is running
+    instance_socket = check_single_instance()
+
+    while True:
+        try:
+            temperatures = get_gpu_temperature()
+            if temperatures:
+                max_temp = max(temperatures)
+                set_gpu_fans(temperatures)
+                print(f"Max GPU Temperature: {max_temp}°C")
+                # Build the URL for the control script
+                url = f"http://{CONTROL_IP}:{CONTROL_PORT}/{MACHINE_NAME}/{max_temp}"
+                send_get_request(url, retries=3)
+            else:
+                print("Unable to read GPU temperatures.")
+        except Exception as e:
+            print(f"Error in main loop: {e}")
+        time.sleep(0.5)
 
 if __name__ == "__main__":
     main()
