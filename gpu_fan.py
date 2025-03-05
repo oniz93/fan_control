@@ -43,6 +43,39 @@ import time
 import socket
 import requests
 from dotenv import load_dotenv
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Set up the logger
+logger = logging.getLogger('gpu_fan')
+logger.setLevel(logging.INFO)
+
+# Configure the RotatingFileHandler
+handler = RotatingFileHandler(
+    filename='gpu_fan.log',
+    maxBytes=1 * 1024 * 1024,  # 1MB
+    backupCount=5  # Keep 5 backup files
+)
+formatter = logging.Formatter('%(asctime)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+# Redirect stdout and stderr to the logger
+class StreamToLogger:
+    def __init__(self, logger, level):
+        self.logger = logger
+        self.level = level
+        self.linebuf = ''
+
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            self.logger.log(self.level, line.rstrip())
+
+    def flush(self):
+        pass
+
+sys.stdout = StreamToLogger(logger, logging.INFO)
+sys.stderr = StreamToLogger(logger, logging.ERROR)
 
 def get_gpu_temperature():
     """Retrieve GPU temperatures using nvidia-smi."""
@@ -55,13 +88,13 @@ def get_gpu_temperature():
         gpu_temps = [int(temp) for temp in temperatures if temp.strip()]
         return gpu_temps if gpu_temps else None
     except Exception as e:
-        print(f"Error retrieving GPU temperatures: {e}")
+        logger.error(f"Error retrieving GPU temperatures: {e}")
         return None
 
 def init_libraries():
     """Check if the required tool 'py-nvtool' is available."""
     if shutil.which("py-nvtool") is None:
-        print("The py-nvtool package must be installed and available in PATH.")
+        logger.error("The py-nvtool package must be installed and available in PATH.")
         return False
     return True
 
@@ -80,7 +113,7 @@ def set_gpu_fans(temperatures):
         else:
             gpu_fan = int(40 + (temp - 30) * (60 / 20))
         gpu_fan = int(max(40, min(100, gpu_fan)))
-        print(f"GPU{i} Temperature: {temp}°C | Fan set to: {gpu_fan}%")
+        logger.info(f"GPU{i} Temperature: {temp}°C | Fan set to: {gpu_fan}%")
         # Use py-nvtool to set the GPU fan speed
         subprocess.run(
             ['py-nvtool', '--index', str(i), '--setfan', str(gpu_fan)],
@@ -93,7 +126,7 @@ def check_single_instance(port=9999, host="127.0.0.1"):
     try:
         s.bind((host, port))
     except socket.error:
-        print("Another instance is already running. Exiting.")
+        logger.info("Another instance is already running. Exiting.")
         sys.exit(0)
     return s  # Hold this socket open for the lifetime of the script
 
@@ -103,14 +136,14 @@ def send_get_request(url, retries=3):
         try:
             response = requests.get(url, timeout=2)
             if response.status_code == 200:
-                print(f"GET request succeeded: {url}")
+                logger.info(f"GET request succeeded: {url}")
                 return True
             else:
-                print(f"GET request failed with status {response.status_code}: {url}")
+                logger.error(f"GET request failed with status {response.status_code}: {url}")
         except Exception as e:
-            print(f"GET request error on attempt {attempt}: {e}")
+            logger.error(f"GET request error on attempt {attempt}: {e}")
         time.sleep(0.1)
-    print(f"Failed to send GET request after {retries} attempts: {url}")
+    logger.error(f"Failed to send GET request after {retries} attempts: {url}")
     return False
 
 def main():
@@ -133,14 +166,14 @@ def main():
             if temperatures:
                 max_temp = max(temperatures)
                 set_gpu_fans(temperatures)
-                print(f"Max GPU Temperature: {max_temp}°C")
+                logger.info(f"Max GPU Temperature: {max_temp}°C")
                 # Build the URL for the control script
                 url = f"http://{CONTROL_IP}:{CONTROL_PORT}/{MACHINE_NAME}/{max_temp}"
                 send_get_request(url, retries=3)
             else:
-                print("Unable to read GPU temperatures.")
+                logger.error("Unable to read GPU temperatures.")
         except Exception as e:
-            print(f"Error in main loop: {e}")
+            logger.error(f"Error in main loop: {e}")
         time.sleep(0.5)
 
 if __name__ == "__main__":

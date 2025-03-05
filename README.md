@@ -34,7 +34,7 @@ crontab -e
 ```
 
 ```
-*/5 * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/control_fan.py >> /home/youruser/fan_control/control_fan.log 2>&1
+* * * * * /home/coinsafe/fan_control/venv/bin/python /home/coinsafe/fan_control/control_fan.py > /dev/null 2>&1
 ```
 
 
@@ -69,11 +69,17 @@ pip install requests dotenv
 
 Create `gpu_fan.py` file and `chmod +x gpu_fan.py`
 
+Create and update .env
+```bash
+mv .env.example .env
+nano .env
+```
+
 Add entry to crontab
 ```bash
 sudo crontab -e
 ```
 
 ```
-*/5 * * * * /home/youruser/fan_control/venv/bin/python /home/youruser/fan_control/gpu_fan.py >> /home/youruser/fan_control/gpu_fan.log 2>&1
+* * * * * /home/coinsafe/fan_control/venv/bin/python /home/coinsafe/fan_control/gpu_fan.py > /dev/null 2>&1
 ```

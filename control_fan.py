@@ -45,6 +45,39 @@ import time
 import socket
 import cherrypy
 import serial
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Set up the logger
+logger = logging.getLogger('fan_control')
+logger.setLevel(logging.INFO)
+
+# Configure the RotatingFileHandler
+handler = RotatingFileHandler(
+    filename='control_fan.log',
+    maxBytes=1 * 1024 * 1024,  # 1MB
+    backupCount=5  # Keep 5 backup files
+)
+formatter = logging.Formatter('%(asctime)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+# Redirect stdout and stderr to the logger
+class StreamToLogger:
+    def __init__(self, logger, level):
+        self.logger = logger
+        self.level = level
+        self.linebuf = ''
+
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            self.logger.log(self.level, line.rstrip())
+
+    def flush(self):
+        pass
+
+sys.stdout = StreamToLogger(logger, logging.INFO)
+sys.stderr = StreamToLogger(logger, logging.ERROR)
 
 # Arduino configuration
 arduino_port = '/dev/ttyACM0'
@@ -64,9 +97,9 @@ def control_fan(duty_cycle):
     try:
         with serial.Serial(arduino_port, baud_rate, timeout=2) as arduino:
             arduino.write(f"{duty_cycle}\n".encode('utf-8'))
-            print(f"Arduino fan duty cycle set to {duty_cycle}%")
+            logger.info(f"Arduino fan duty cycle set to {duty_cycle}%")
     except Exception as e:
-        print(f"Error communicating with Arduino: {e}")
+        logger.error(f"Error communicating with Arduino: {e}")
 
 class FanController(object):
     # Dictionary to store values: key is name, value is a tuple (temperature, timestamp)
@@ -97,7 +130,7 @@ class FanController(object):
 
         # Update the store with the new value
         self.kv_store[name] = (temperature, current_time)
-        print(f"Updated kv_store: {self.kv_store}")
+        logger.info(f"Updated kv_store: {self.kv_store}")
 
         # Find the highest temperature currently stored
         if self.kv_store:
@@ -107,7 +140,7 @@ class FanController(object):
 
         # Compute the new duty cycle and update the fan
         duty_cycle = compute_duty_cycle(max_temp)
-        print(f"Computed duty cycle {duty_cycle}% from max temperature {max_temp}")
+        logger.info(f"Computed duty cycle {duty_cycle}% from max temperature {max_temp}")
         control_fan(duty_cycle)
 
         return f"Received {name} with temperature {temperature}. Duty cycle set to {duty_cycle}%.\n"
@@ -128,7 +161,7 @@ if __name__ == "__main__":
 
     # Check if the port is already in use; if so, exit to prevent multiple instances.
     if is_port_in_use(port, host):
-        print(f"Server already running on port {port}. Exiting.")
+        logger.info(f"Server already running on port {port}. Exiting.")
         sys.exit(0)
 
     # CherryPy server configuration
@@ -140,6 +173,6 @@ if __name__ == "__main__":
 
     # Mount our FanController to the root URL
     cherrypy.tree.mount(FanController(), '/')
-    print(f"Starting CherryPy server on {host}:{port}")
+    logger.info(f"Starting CherryPy server on {host}:{port}")
     cherrypy.engine.start()
     cherrypy.engine.block()
