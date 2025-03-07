@@ -174,7 +174,7 @@ def main():
                 logger.error("Unable to read GPU temperatures.")
         except Exception as e:
             logger.error(f"Error in main loop: {e}")
-        time.sleep(0.5)
+        time.sleep(6)
 
 if __name__ == "__main__":
     main()
